@@ -1,0 +1,55 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Dynooh MiniPixels",
+  "version": "1.0.0",
+  "identifier": "ch.visual-fantastix.minipixels",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1430",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Dynooh MiniPixels",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 480,
+        "minHeight": 360,
+        "visible": false,
+        "backgroundColor": "#1e1f22",
+        "additionalBrowserArgs": "--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection --autoplay-policy=no-user-gesture-required"
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff"],
+        "name": "Image",
+        "description": "Image",
+        "role": "Viewer"
+      },
+      {
+        "ext": ["mp3", "mp4", "mov"],
+        "name": "Media",
+        "description": "Audio / Video",
+        "role": "Viewer"
+      }
+    ]
+  }
+}

@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Dynooh MiniPixels</title>
+    <style>
+      html, body { margin: 0; height: 100%; background: transparent; overflow: hidden; user-select: none; cursor: default; }
+      body { display: flex; align-items: center; justify-content: center; font-family: "Segoe UI", Arial, sans-serif; }
+      .card {
+        width: 420px; height: 280px; box-sizing: border-box; border-radius: 16px;
+        background: linear-gradient(140deg, #0e5a66 0%, #05303a 55%, #1e1f22 100%);
+        border: 1px solid #1b8696; box-shadow: 0 10px 30px rgba(0, 0, 0, 0.55);
+        display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; color: #d6f6fb;
+        animation: enter 0.35s ease-out both;
+      }
+      svg { width: 104px; height: 104px; filter: drop-shadow(0 4px 12px rgba(0, 0, 0, 0.45)); }
+      .px { transform-box: fill-box; transform-origin: center; animation: pop 1.6s ease-in-out infinite; }
+      .px:nth-of-type(2) { animation-delay: 0.2s; }
+      .px:nth-of-type(3) { animation-delay: 0.4s; }
+      h1 { margin: 0; font-size: 24px; font-weight: 600; letter-spacing: 0.4px; color: #c8f7ff; }
+      .sub { font-size: 12px; color: #8cc3cc; }
+      .bar { position: relative; width: 220px; height: 4px; border-radius: 2px; background: rgba(255, 255, 255, 0.12); overflow: hidden; }
+      .bar::after {
+        content: ""; position: absolute; top: 0; left: -40%; width: 40%; height: 100%; border-radius: 2px;
+        background: linear-gradient(90deg, transparent, #3fd3ee, transparent); animation: run 1.1s ease-in-out infinite;
+      }
+      @keyframes run { to { left: 100%; } }
+      @keyframes enter { from { opacity: 0; transform: scale(0.96); } }
+      @keyframes pop {
+        0%, 100% { opacity: 0; transform: scale(0.3); }
+        25%, 70% { opacity: 1; transform: scale(1); }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <svg viewBox="0 0 1024 1024" aria-hidden="true">
+        <defs>
+          <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#0e5a66" />
+            <stop offset="1" stop-color="#05303a" />
+          </linearGradient>
+          <linearGradient id="fg" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stop-color="#b3f4ff" />
+            <stop offset="1" stop-color="#3fd3ee" />
+          </linearGradient>
+        </defs>
+        <rect x="32" y="32" width="960" height="960" rx="90" fill="url(#bg)" />
+        <rect x="32" y="32" width="960" height="960" rx="90" fill="none" stroke="#1b8696" stroke-width="12" />
+        <g>
+          <rect class="px" x="742" y="132" width="64" height="64" fill="#3fd3ee" />
+          <rect class="px" x="822" y="132" width="64" height="64" fill="#b3f4ff" />
+          <rect class="px" x="822" y="212" width="64" height="64" fill="#3fd3ee" />
+        </g>
+        <text x="512" y="692" text-anchor="middle" font-family="Segoe UI Black, Segoe UI, Arial, sans-serif" font-weight="900" font-size="520" letter-spacing="-14" fill="url(#fg)" stroke="url(#fg)" stroke-width="10" stroke-linejoin="round">Mp</text>
+      </svg>
+      <h1>Dynooh MiniPixels</h1>
+      <div class="bar"></div>
+      <div class="sub" id="sub">Loading …</div>
+    </div>
+    <script>
+      if (window.__MPX_LANG === "de") document.getElementById("sub").textContent = "Wird geladen …";
+    </script>
+  </body>
+</html>

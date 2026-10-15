@@ -1,0 +1,339 @@
+import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { ask, open } from "@tauri-apps/plugin-dialog";
+import { locale, t } from "./i18n";
+import { settings } from "./settings.svelte";
+
+export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "bmp", "gif", "tif", "tiff"];
+export const MEDIA_EXTENSIONS = ["mp3", "mp4", "mov"];
+/** Above this many files, "new instance" mode asks before starting that many processes. */
+const ASK_WINDOWS = 8;
+
+export type Kind = "image" | "audio" | "video";
+
+export interface Item {
+  id: number;
+  path: string;
+  name: string;
+  ext: string;
+  kind: Kind;
+  size: number;
+  modified: number;
+  width: number;
+  height: number;
+  /** Seconds, known once the media metadata has been read. */
+  duration: number;
+  format: string;
+  /** Video codec of MP4/MOV files, e.g. "H.264" or "HEVC". */
+  codec: string | null;
+  error: string | null;
+  /** Set once size and modification time are known; the file URLs depend on them. */
+  loaded: boolean;
+}
+
+interface Info {
+  path: string;
+  size: number;
+  modified: number;
+  width: number;
+  height: number;
+  format: string;
+  codec: string | null;
+  error: string | null;
+}
+
+export type SortKey = "name" | "format" | "pixels" | "duration" | "size" | "modified" | "folder";
+
+export const view = $state({
+  items: [] as Item[],
+  active: -1,
+  /** Tiles/list: the active image is shown full size. */
+  viewing: false,
+  /** New-instance mode: images in the folder of the shown file, for previous/next. */
+  folder: [] as string[],
+  dragging: false,
+  fullscreen: false,
+  message: "",
+  sort: { key: "" as SortKey | "", asc: true },
+});
+
+let nextId = 1;
+let messageTimer: ReturnType<typeof setTimeout> | undefined;
+
+const keyOf = (p: string) => p.toLowerCase();
+
+export function dirOf(path: string): string {
+  return path.slice(0, Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/")));
+}
+
+function makeItem(path: string): Item {
+  const name = path.split(/[\\/]/).pop() ?? path;
+  const dot = name.lastIndexOf(".");
+  const ext = dot > 0 ? name.slice(dot + 1).toLowerCase() : "";
+  return {
+    id: nextId++,
+    path,
+    name,
+    ext,
+    kind: ext === "mp3" ? "audio" : ext === "mp4" || ext === "mov" ? "video" : "image",
+    size: 0,
+    modified: 0,
+    width: 0,
+    height: 0,
+    duration: 0,
+    format: "",
+    codec: null,
+    error: null,
+    loaded: false,
+  };
+}
+
+export function flash(message: string) {
+  view.message = message;
+  clearTimeout(messageTimer);
+  messageTimer = setTimeout(() => (view.message = ""), 5000);
+}
+
+async function loadInfo(paths: string[]) {
+  for (let i = 0; i < paths.length; i += 64) {
+    const chunk = paths.slice(i, i + 64);
+    let infos: Info[];
+    try {
+      infos = await invoke<Info[]>("files_info", { paths: chunk });
+    } catch (e) {
+      infos = chunk.map((path) => ({ path, size: 0, modified: 0, width: 0, height: 0, format: "", codec: null, error: String(e) }));
+    }
+    const byKey = new Map(view.items.map((it) => [keyOf(it.path), it]));
+    for (const info of infos) {
+      const it = byKey.get(keyOf(info.path));
+      if (it) Object.assign(it, info, { path: it.path, error: info.error ? t(info.error) : null, loaded: true });
+    }
+  }
+}
+
+/** Stores dimensions and duration read by the player or the preview of an audio/video file. */
+export function setMeta(id: number, meta: { width?: number; height?: number; duration?: number }) {
+  const it = view.items.find((i) => i.id === id);
+  if (!it) return;
+  if (meta.width && meta.height) {
+    it.width = meta.width;
+    it.height = meta.height;
+  }
+  if (meta.duration && Number.isFinite(meta.duration)) it.duration = meta.duration;
+}
+
+/** Adds files that are not open yet; returns the index of the first given file. */
+function addPaths(paths: string[]): number {
+  const known = new Map(view.items.map((it, i) => [keyOf(it.path), i]));
+  const fresh: Item[] = [];
+  let first = -1;
+  for (const p of paths) {
+    const k = keyOf(p);
+    let idx = known.get(k);
+    if (idx === undefined) {
+      idx = view.items.length + fresh.length;
+      fresh.push(makeItem(p));
+      known.set(k, idx);
+    }
+    if (first < 0) first = idx;
+  }
+  if (fresh.length) {
+    view.items.push(...fresh);
+    view.sort.key = "";
+    void loadInfo(fresh.map((it) => it.path));
+  }
+  return first;
+}
+
+async function showSingle(path: string) {
+  view.items = [makeItem(path)];
+  view.active = 0;
+  void loadInfo([path]);
+  view.folder = await invoke<string[]>("folder_images", { path }).catch(() => []);
+}
+
+/** Opens files and folders according to the chosen open mode. */
+export async function openPaths(raw: string[]) {
+  if (!raw.length) return;
+  try {
+    if (settings.openMode === "window") return await openAsWindows(raw);
+    const paths = await invoke<string[]>("expand_paths", { paths: raw });
+    if (!paths.length) return flash(t("Keine unterstützten Dateien gefunden."));
+    view.active = addPaths(paths);
+    view.viewing = paths.length === 1;
+  } catch (e) {
+    flash(String(e));
+  }
+}
+
+/** One window per given file or folder; this window takes the first one if it is still empty. */
+async function openAsWindows(raw: string[]) {
+  const targets: { path: string; first: string }[] = [];
+  for (const path of raw) {
+    const files = await invoke<string[]>("expand_paths", { paths: [path] });
+    if (files.length) targets.push({ path, first: files[0] });
+  }
+  if (!targets.length) return flash(t("Keine unterstützten Dateien gefunden."));
+  let rest = targets;
+  if (!view.items.length) {
+    await showSingle(targets[0].first);
+    rest = targets.slice(1);
+  }
+  if (!rest.length) return;
+  if (rest.length > ASK_WINDOWS) {
+    const ok = await ask(t("{n} neue Fenster öffnen?", { n: rest.length }), { title: "Dynooh MiniPixels", kind: "warning" });
+    if (!ok) return;
+  }
+  await openInNewInstance(rest.map((r) => r.path));
+}
+
+export async function openInNewInstance(paths: string[]) {
+  await invoke("open_in_new_instance", { paths }).catch((e) => flash(String(e)));
+}
+
+/** Opens copied files, or saves a copied image as PNG in the temp folder and opens that. */
+export async function pasteClipboard() {
+  const d = new Date();
+  const p = (n: number) => String(n).padStart(2, "0");
+  const stamp = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}.${p(d.getMinutes())}.${p(d.getSeconds())}`;
+  try {
+    const paths = await invoke<string[]>("clipboard_paste", { name: `${t("Zwischenablage")} ${stamp}` });
+    if (!paths.length) return flash(t("Die Zwischenablage enthält weder ein Bild noch Dateien."));
+    await openPaths(paths);
+  } catch (e) {
+    flash(String(e));
+  }
+}
+
+export async function openFilesDialog() {
+  const picked = await open({
+    multiple: true,
+    filters: [
+      { name: t("Alle unterstützten Dateien"), extensions: [...IMAGE_EXTENSIONS, ...MEDIA_EXTENSIONS] },
+      { name: t("Bilder"), extensions: IMAGE_EXTENSIONS },
+      { name: t("Audio und Video"), extensions: MEDIA_EXTENSIONS },
+    ],
+  });
+  if (picked) await openPaths(Array.isArray(picked) ? picked : [picked]);
+}
+
+export async function openFolderDialog() {
+  const picked = await open({ directory: true });
+  if (typeof picked === "string") await openPaths([picked]);
+}
+
+/** New-instance mode with a single file steps through its folder instead of the open files. */
+function folderMode(): boolean {
+  return settings.openMode === "window" && view.items.length <= 1 && view.folder.length > 1;
+}
+
+export function step(delta: number) {
+  const cur = view.items[view.active];
+  if (!cur) return;
+  if (folderMode()) {
+    const list = view.folder;
+    const i = list.findIndex((p) => keyOf(p) === keyOf(cur.path));
+    const next = list[(i + delta + list.length) % list.length];
+    view.items = [makeItem(next)];
+    view.active = 0;
+    void loadInfo([next]);
+    return;
+  }
+  const n = view.items.length;
+  if (n > 1) view.active = (view.active + delta + n) % n;
+}
+
+export function select(index: number) {
+  if (view.items.length) view.active = Math.max(0, Math.min(view.items.length - 1, index));
+}
+
+export function closeAt(index: number) {
+  view.items.splice(index, 1);
+  if (view.active > index || view.active >= view.items.length) view.active--;
+  if (!view.items.length) {
+    view.active = -1;
+    view.viewing = false;
+    view.folder = [];
+  }
+}
+
+/** 1-based position and total for the status bar, or null if there is nothing to step through. */
+export function position(): [number, number] | null {
+  const cur = view.items[view.active];
+  if (!cur) return null;
+  if (folderMode()) return [view.folder.findIndex((p) => keyOf(p) === keyOf(cur.path)) + 1, view.folder.length];
+  return view.items.length > 1 ? [view.active + 1, view.items.length] : null;
+}
+
+export function sortItems(key: SortKey) {
+  const asc = view.sort.key === key ? !view.sort.asc : true;
+  const coll = new Intl.Collator(locale(), { numeric: true, sensitivity: "base" });
+  const byName = (a: Item, b: Item) => coll.compare(a.name, b.name);
+  const cmp: Record<SortKey, (a: Item, b: Item) => number> = {
+    name: byName,
+    format: (a, b) => coll.compare(a.format || a.ext, b.format || b.ext) || byName(a, b),
+    pixels: (a, b) => a.width * a.height - b.width * b.height || byName(a, b),
+    duration: (a, b) => a.duration - b.duration || byName(a, b),
+    size: (a, b) => a.size - b.size || byName(a, b),
+    modified: (a, b) => a.modified - b.modified || byName(a, b),
+    folder: (a, b) => coll.compare(dirOf(a.path), dirOf(b.path)) || byName(a, b),
+  };
+  const activeId = view.items[view.active]?.id;
+  const sorted = [...view.items].sort((a, b) => (asc ? 1 : -1) * cmp[key](a, b));
+  view.items = sorted;
+  view.active = sorted.findIndex((it) => it.id === activeId);
+  view.sort = { key, asc };
+}
+
+/** Modification time and size in the URL make the cached answer of the px protocol safe to keep. */
+export function fileUrl(it: Item): string {
+  return `${convertFileSrc(it.path, "px")}?m=${it.modified}-${it.size}`;
+}
+
+export function pathUrl(path: string): string {
+  return convertFileSrc(path, "px");
+}
+
+export function thumbUrl(it: Item, px: number): string {
+  return `${fileUrl(it)}&w=${px}`;
+}
+
+/** Embedded cover of an MP3. */
+export function coverUrl(it: Item): string {
+  return `${fileUrl(it)}&cover`;
+}
+
+/** "MOV · HEVC" for videos with a known codec, otherwise the file format. */
+export function formatLabel(it: Item): string {
+  const format = it.format || it.ext.toUpperCase();
+  return it.codec ? `${format} · ${t(it.codec)}` : format;
+}
+
+export function formatDuration(seconds: number): string {
+  const s = Math.round(seconds);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${ss}` : `${m}:${ss}`;
+}
+
+/** Few fixed thumbnail sizes so the browser cache can reuse them. */
+export function thumbBucket(cssPx: number): number {
+  const px = cssPx * (window.devicePixelRatio || 1);
+  return px <= 64 ? 64 : px <= 128 ? 128 : px <= 256 ? 256 : 512;
+}
+
+export function formatSize(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const units = ["KB", "MB", "GB"];
+  let v = bytes / 1024;
+  let u = 0;
+  while (v >= 1024 && u < units.length - 1) {
+    v /= 1024;
+    u++;
+  }
+  return `${v.toLocaleString(locale(), { maximumFractionDigits: 1 })} ${units[u]}`;
+}
+
+export function formatDate(ms: number): string {
+  return ms ? new Date(ms).toLocaleString(locale(), { dateStyle: "short", timeStyle: "short" }) : "";
+}
