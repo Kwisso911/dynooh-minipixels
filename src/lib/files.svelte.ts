@@ -53,7 +53,6 @@ export const view = $state({
   dragging: false,
   fullscreen: false,
   message: "",
-  sort: { key: "" as SortKey | "", asc: true },
 });
 
 let nextId = 1;
@@ -121,27 +120,27 @@ export function setMeta(id: number, meta: { width?: number; height?: number; dur
   if (meta.duration && Number.isFinite(meta.duration)) it.duration = meta.duration;
 }
 
-/** Adds files that are not open yet; returns the index of the first given file. */
-function addPaths(paths: string[]): number {
-  const known = new Map(view.items.map((it, i) => [keyOf(it.path), i]));
+/** Adds files that are not open yet and makes the first given file the active one. */
+function addPaths(paths: string[]) {
+  const known = new Map(view.items.map((it) => [keyOf(it.path), it]));
   const fresh: Item[] = [];
-  let first = -1;
+  let first: Item | undefined;
   for (const p of paths) {
     const k = keyOf(p);
-    let idx = known.get(k);
-    if (idx === undefined) {
-      idx = view.items.length + fresh.length;
-      fresh.push(makeItem(p));
-      known.set(k, idx);
+    let it = known.get(k);
+    if (!it) {
+      it = makeItem(p);
+      fresh.push(it);
+      known.set(k, it);
     }
-    if (first < 0) first = idx;
+    first ??= it;
   }
-  if (fresh.length) {
-    view.items.push(...fresh);
-    view.sort.key = "";
-    void loadInfo(fresh.map((it) => it.path));
-  }
-  return first;
+  if (fresh.length) view.items.push(...fresh);
+  view.active = view.items.findIndex((it) => it.id === first?.id);
+  if (!fresh.length) return;
+  applySort();
+  // Date, size and dimensions are only known once the info has arrived.
+  void loadInfo(fresh.map((it) => it.path)).then(applySort);
 }
 
 async function showSingle(path: string) {
@@ -158,8 +157,8 @@ export async function openPaths(raw: string[]) {
     if (settings.openMode === "window") return await openAsWindows(raw);
     const paths = await invoke<string[]>("expand_paths", { paths: raw });
     if (!paths.length) return flash(t("Keine unterstützten Dateien gefunden."));
-    view.active = addPaths(paths);
-    view.viewing = paths.length === 1;
+    addPaths(paths);
+    view.viewing = false;
   } catch (e) {
     flash(String(e));
   }
@@ -264,8 +263,7 @@ export function position(): [number, number] | null {
   return view.items.length > 1 ? [view.active + 1, view.items.length] : null;
 }
 
-export function sortItems(key: SortKey) {
-  const asc = view.sort.key === key ? !view.sort.asc : true;
+function comparator(key: SortKey): (a: Item, b: Item) => number {
   const coll = new Intl.Collator(locale(), { numeric: true, sensitivity: "base" });
   const byName = (a: Item, b: Item) => coll.compare(a.name, b.name);
   const cmp: Record<SortKey, (a: Item, b: Item) => number> = {
@@ -277,11 +275,44 @@ export function sortItems(key: SortKey) {
     modified: (a, b) => a.modified - b.modified || byName(a, b),
     folder: (a, b) => coll.compare(dirOf(a.path), dirOf(b.path)) || byName(a, b),
   };
+  return cmp[key];
+}
+
+/** Sorts the open files by the chosen key; the user's own order stays untouched. */
+export function applySort() {
+  const key = settings.sortKey;
+  if (!key || view.items.length < 2) return;
+  const cmp = comparator(key);
+  const dir = settings.sortAsc ? 1 : -1;
   const activeId = view.items[view.active]?.id;
-  const sorted = [...view.items].sort((a, b) => (asc ? 1 : -1) * cmp[key](a, b));
+  const sorted = [...view.items].sort((a, b) => dir * cmp(a, b));
+  if (sorted.every((it, i) => it === view.items[i])) return;
   view.items = sorted;
   view.active = sorted.findIndex((it) => it.id === activeId);
-  view.sort = { key, asc };
+}
+
+export function setSort(key: SortKey | "", asc = settings.sortAsc) {
+  settings.sortKey = key;
+  settings.sortAsc = asc;
+  applySort();
+}
+
+/** Column header click: same column flips the direction. */
+export function sortItems(key: SortKey) {
+  setSort(key, settings.sortKey === key ? !settings.sortAsc : true);
+}
+
+/** Moves a file to another place; `to` is the insertion index before the move. Switches to the user's own order. */
+export function moveItem(from: number, to: number) {
+  if (to > from) to--;
+  if (from === to || !view.items[from]) return;
+  const activeId = view.items[view.active]?.id;
+  const items = [...view.items];
+  const [it] = items.splice(from, 1);
+  items.splice(to, 0, it);
+  view.items = items;
+  view.active = items.findIndex((i) => i.id === activeId);
+  settings.sortKey = "";
 }
 
 /** Modification time and size in the URL make the cached answer of the px protocol safe to keep. */

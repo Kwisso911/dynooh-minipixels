@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { onMount, tick } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
   import { invoke } from "@tauri-apps/api/core";
   import { listen } from "@tauri-apps/api/event";
   import { getCurrentWebview } from "@tauri-apps/api/webview";
@@ -8,6 +8,8 @@
   import Icon, { type IconName } from "$lib/components/Icon.svelte";
   import Viewer from "$lib/components/Viewer.svelte";
   import MediaPlayer from "$lib/components/MediaPlayer.svelte";
+  import MediaBar from "$lib/components/MediaBar.svelte";
+  import MediaEngine from "$lib/components/MediaEngine.svelte";
   import TabBar from "$lib/components/TabBar.svelte";
   import TilesView from "$lib/components/TilesView.svelte";
   import ListView from "$lib/components/ListView.svelte";
@@ -15,7 +17,8 @@
   import ContextMenu, { type MenuEntry } from "$lib/components/ContextMenu.svelte";
   import { t } from "$lib/i18n";
   import { hasGuides, clearGuides } from "$lib/guides.svelte";
-  import { settings, loadSettings, watchSettings, isDark, type OpenMode } from "$lib/settings.svelte";
+  import { settings, loadSettings, watchSettings, isDark, slideDelayMs, type OpenMode } from "$lib/settings.svelte";
+  import { playback, isMedia, togglePlay, playItem, barPlayable, holdPlayback, playbackHeld } from "$lib/playback.svelte";
   import {
     view,
     step,
@@ -30,6 +33,8 @@
     formatSize,
     formatDuration,
     formatLabel,
+    setSort,
+    type SortKey,
   } from "$lib/files.svelte";
 
   watchSettings();
@@ -42,7 +47,6 @@
   ];
 
   let viewer = $state<ReturnType<typeof Viewer>>();
-  let player = $state<ReturnType<typeof MediaPlayer>>();
   let tilesView = $state<ReturnType<typeof TilesView>>();
   let scale = $state(1);
   let showSettings = $state(false);
@@ -52,8 +56,49 @@
   const overview = $derived(settings.openMode === "tiles" || settings.openMode === "list");
   const showViewer = $derived(!!item && (!overview || view.viewing));
   const showImage = $derived(showViewer && item?.kind === "image");
+  /** A playing video gets the same zoom, rulers and pixel grid as an image. */
+  const showVideo = $derived(showViewer && item?.kind === "video" && playback.id === item.id && playback.failed !== item.id);
+  const zoomable = $derived(showImage || showVideo);
   const pos = $derived(position());
   const dark = $derived(isDark());
+  const showBar = $derived(view.items.some(isMedia));
+  const showSort = $derived(view.items.length > 1 && (settings.openMode === "tabs" || (overview && !view.viewing)));
+
+  const SORT_LABELS: Record<SortKey | "", string> = {
+    "": "Individuell",
+    name: "Name",
+    modified: "Alter",
+    format: "Format",
+    pixels: "Abmessungen",
+    duration: "Dauer",
+    size: "Grösse",
+    folder: "Ordner",
+  };
+  /** The list columns can sort by more keys; the chosen one then shows up here too. */
+  const sortOptions = $derived<(SortKey | "")[]>(
+    ["", "name", "modified"].includes(settings.sortKey) ? ["", "name", "modified"] : ["", "name", "modified", settings.sortKey],
+  );
+
+  $effect(() => {
+    if (!settings.slideshow || !showImage || !pos || showSettings || menu) return;
+    void item.id;
+    const timer = setTimeout(() => step(1), slideDelayMs());
+    return () => clearTimeout(timer);
+  });
+
+  /** Opening an audio/video file in the single view plays it; a mode switch keeps what is playing. */
+  let shownMedia = 0;
+  $effect(() => {
+    const it = showViewer && item?.loaded && isMedia(item) ? item : undefined;
+    if ((it?.id ?? 0) === shownMedia) return;
+    shownMedia = it?.id ?? 0;
+    if (it) untrack(() => !playbackHeld() && playback.id !== it.id && barPlayable(it) && playItem(it));
+  });
+
+  function toggleSlideshow() {
+    settings.slideshow = !settings.slideshow;
+    if (settings.slideshow && overview && item) view.viewing = true;
+  }
 
   $effect(() => {
     const title = item ? `${item.name} – Dynooh MiniPixels` : "Dynooh MiniPixels";
@@ -87,6 +132,7 @@
   });
 
   function setMode(mode: OpenMode) {
+    holdPlayback();
     settings.openMode = mode;
     view.viewing = false;
   }
@@ -111,7 +157,7 @@
     view.active = index;
     const entries: MenuEntry[] = [];
     if (overview && !view.viewing) entries.push({ label: t("Anzeigen"), hint: "Enter", action: () => (view.viewing = true) });
-    if (showImage && it === item) {
+    if (zoomable && it === item) {
       entries.push(
         { label: settings.rulers ? t("Lineale ausblenden") : t("Lineale einblenden"), hint: "Ctrl+R", action: () => (settings.rulers = !settings.rulers) },
         { label: settings.guides ? t("Hilfslinien ausblenden") : t("Hilfslinien einblenden"), hint: "Ctrl+H", action: () => (settings.guides = !settings.guides) },
@@ -140,10 +186,20 @@
       if (e.key === "Escape") showSettings = false;
       return;
     }
-    if ((e.target as HTMLElement).closest("input, select, textarea, video, audio")) return;
+    const key = e.key;
+    if (key === "F11") {
+      e.preventDefault();
+      toggleFullscreen();
+      return;
+    }
+    if (key === "F5") {
+      e.preventDefault();
+      if (pos) toggleSlideshow();
+      return;
+    }
+    if (e.target instanceof Element && e.target.closest("input, select, textarea, video, audio")) return;
 
     const ctrl = e.ctrlKey || e.metaKey;
-    const key = e.key;
     if (ctrl && key.toLowerCase() === "o") {
       e.preventDefault();
       if (e.shiftKey) openFolderDialog();
@@ -167,7 +223,7 @@
     }
     if (ctrl && (key.toLowerCase() === "r" || key.toLowerCase() === "h")) {
       e.preventDefault();
-      if (!showImage) return;
+      if (!zoomable) return;
       if (key.toLowerCase() === "r") settings.rulers = !settings.rulers;
       else settings.guides = !settings.guides;
       return;
@@ -175,11 +231,6 @@
     if (ctrl && key === "Tab") {
       e.preventDefault();
       step(e.shiftKey ? -1 : 1);
-      return;
-    }
-    if (key === "F11") {
-      e.preventDefault();
-      toggleFullscreen();
       return;
     }
     if (key === "Escape" && view.fullscreen) {
@@ -199,7 +250,7 @@
           step(1);
           break;
         case " ":
-          if (player) player.toggle();
+          if (isMedia(item)) togglePlay(item);
           else step(1);
           break;
         case "+":
@@ -253,8 +304,11 @@
         case "End":
           select(view.items.length - 1);
           break;
-        case "Enter":
         case " ":
+          if (isMedia(item)) togglePlay(item);
+          else view.viewing = true;
+          break;
+        case "Enter":
           view.viewing = true;
           break;
         case "Delete":
@@ -295,9 +349,38 @@
         <input type="range" min="96" max="360" step="8" bind:value={settings.tileSize} />
       </label>
     {/if}
+    {#if showSort}
+      <label class="sort-select" title={t("Sortieren · eigene Reihenfolge per Ziehen")}>
+        <Icon name="sort" size={14} />
+        <select value={settings.sortKey} onchange={(e) => setSort(e.currentTarget.value as SortKey | "")}>
+          {#each sortOptions as key (key)}
+            <option value={key}>{t(SORT_LABELS[key])}</option>
+          {/each}
+        </select>
+      </label>
+      {#if settings.sortKey}
+        <button
+          class="icon-btn"
+          title={settings.sortAsc ? t("Aufsteigend") : t("Absteigend")}
+          onclick={() => setSort(settings.sortKey, !settings.sortAsc)}
+        >
+          <Icon name={settings.sortAsc ? "sortAsc" : "sortDesc"} />
+        </button>
+      {/if}
+    {/if}
 
     <span class="spacer"></span>
 
+    {#if pos}
+      <button
+        class="icon-btn"
+        class:active={settings.slideshow}
+        title="{settings.slideshow ? t('Diashow beenden') : t('Diashow starten')} (F5)"
+        onclick={toggleSlideshow}
+      >
+        <Icon name="slideshow" />
+      </button>
+    {/if}
     {#if showViewer}
       {#if view.viewing}
         <button class="icon-btn" title="{t('Zurück zur Übersicht')} (Esc)" onclick={() => (view.viewing = false)}><Icon name="back" /></button>
@@ -307,7 +390,7 @@
         <button class="icon-btn" title="{t('Nächste Datei')} (→)" onclick={() => step(1)}><Icon name="next" /></button>
         <span class="divider"></span>
       {/if}
-      {#if showImage}
+      {#if zoomable}
         <button class="icon-btn" title="{t('Verkleinern')} (-)" onclick={() => viewer?.zoomBy(0.8)}><Icon name="zoomOut" /></button>
         <span class="zoom-label">{Math.round(scale * 100)} %</span>
         <button class="icon-btn" title="{t('Vergrössern')} (+)" onclick={() => viewer?.zoomBy(1.25)}><Icon name="zoomIn" /></button>
@@ -356,10 +439,10 @@
       </div>
     {:else if showViewer}
       {#key item.id}
-        {#if item.kind === "image"}
+        {#if item.kind === "image" || showVideo}
           <Viewer bind:this={viewer} bind:scale {item} oncontextmenu={(e) => openMenu(e, view.active)} />
         {:else}
-          <MediaPlayer bind:this={player} {item} oncontextmenu={(e) => openMenu(e, view.active)} />
+          <MediaPlayer {item} oncontextmenu={(e) => openMenu(e, view.active)} />
         {/if}
       {/key}
     {:else if settings.openMode === "tiles"}
@@ -371,6 +454,11 @@
       <div class="drop-overlay">{t("Loslassen zum Öffnen")}</div>
     {/if}
   </main>
+
+  {#if showBar}
+    <MediaBar />
+  {/if}
+  <MediaEngine inViewer={showViewer} />
 
   <footer class="statusbar">
     {#if item}

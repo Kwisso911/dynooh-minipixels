@@ -10,7 +10,11 @@ A small, fast image and media viewer for Windows. Open images, audio and video i
 
 - **Images** – PNG, JPG, BMP, GIF and TIF with zoom, fit and pixel-exact view
 - **Audio and video** – MP3, MP4 and MOV, codec shown per file; unsupported video codecs can be converted to H.264 with FFmpeg (downloaded on request)
+- **Playback bar** – one player for all views: playback keeps running when you switch views, plays straight from tiles and list, optionally moves on to the next file
+- **Video like images** – zoom, rulers, guides and pixel grid also for a playing video
+- **Slideshow** – F5 starts and stops it, seconds per image in the settings
 - **Open your way** – new window, tabs, tiles or list, browse a whole folder
+- **Sorting** – by name or age, or your own order by dragging tabs, tiles and rows
 - **Rulers and guides** – Ctrl+R shows rulers, drag guides out of them, Ctrl+H hides them, Del removes the selected guide
 - **Pixel grid** – fine grid around every pixel above 400 % zoom
 - **Clipboard** – paste images or copied files with Ctrl+V

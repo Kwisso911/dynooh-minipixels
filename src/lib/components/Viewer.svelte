@@ -3,6 +3,7 @@
   import { settings, isDark } from "$lib/settings.svelte";
   import { fileUrl, type Item } from "$lib/files.svelte";
   import { guidesFor } from "$lib/guides.svelte";
+  import { hostMedia } from "$lib/playback.svelte";
 
   let {
     item,
@@ -39,6 +40,15 @@
   let guideDrag = $state<{ axis: "x" | "y"; index: number } | null>(null);
   let selected = $state<{ axis: "x" | "y"; index: number } | null>(null);
   const guides = $derived(guidesFor(item.id));
+  /** Videos show the app's single media element instead of an image. */
+  const isVideo = $derived(item.kind === "video");
+
+  $effect(() => {
+    if (!isVideo) return;
+    nw = item.width;
+    nh = item.height;
+    status = nw && nh ? "ok" : "loading";
+  });
 
   const turned = $derived(rotation % 180 !== 0);
   const fitScale = $derived.by(() => {
@@ -358,7 +368,17 @@
     role="img"
     aria-label={item.name}
   >
-    {#if item.loaded}
+    {#if isVideo}
+      <span
+        class="media-frame"
+        use:hostMedia={1}
+        class:pixelated={scale >= 2}
+        class:hidden={status !== "ok"}
+        style:width="{nw * scale}px"
+        style:height="{nh * scale}px"
+        style:transform="translate(-50%, -50%) translate({x}px, {y}px) rotate({rotation}deg)"
+      ></span>
+    {:else if item.loaded}
       <img
         src={fileUrl(item)}
         alt={item.name}

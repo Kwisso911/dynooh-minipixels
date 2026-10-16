@@ -71,6 +71,19 @@
       <label class="check"><input type="checkbox" bind:checked={settings.splash} /> {t("Startlogo beim Programmstart anzeigen")}</label>
     </fieldset>
 
+    <fieldset>
+      <legend>{t("Wiedergabe")}</legend>
+      <div class="row">
+        <label class="check"><input type="checkbox" bind:checked={settings.slideshow} /> {t("Diashow")}</label>
+        <span class="spacer"></span>
+        <label class="row muted nowrap">
+          <input class="seconds" type="number" min="1" max="3600" step="1" bind:value={settings.slideSeconds} />
+          {t("Sekunden pro Bild")}
+        </label>
+      </div>
+      <label class="check"><input type="checkbox" bind:checked={settings.autoNext} /> {t("Nach dem Ende von Audio und Video zur nächsten Datei springen")}</label>
+    </fieldset>
+
     <p class="muted small">Dynooh MiniPixels {version} · PNG · JPG · BMP · GIF · TIF · MP3 · MP4 · MOV</p>
   </div>
 </div>

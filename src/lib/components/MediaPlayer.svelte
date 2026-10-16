@@ -2,11 +2,12 @@
   import { onDestroy, untrack } from "svelte";
   import { openUrl } from "@tauri-apps/plugin-opener";
   import Icon from "./Icon.svelte";
+  import Thumb from "./Thumb.svelte";
   import { t } from "$lib/i18n";
-  import { settings } from "$lib/settings.svelte";
-  import { fileUrl, pathUrl, coverUrl, setMeta, flash, type Item } from "$lib/files.svelte";
+  import { coverUrl, flash, type Item } from "$lib/files.svelte";
   import { codecPlayable } from "$lib/media";
   import { ffmpeg, checkFfmpeg, installFfmpeg, transcode, cancelTranscode } from "$lib/ffmpeg.svelte";
+  import { playback, converted, playItem, togglePlay } from "$lib/playback.svelte";
 
   let { item, oncontextmenu }: { item: Item; oncontextmenu?: (e: MouseEvent) => void } = $props();
 
@@ -14,19 +15,19 @@
   const HEVC_FREE = "ms-windows-store://pdp/?ProductId=9n4wgh0z6vhq";
   const HEVC_PAID = "ms-windows-store://pdp/?ProductId=9nmzlz57r3t7";
 
-  let media = $state<HTMLMediaElement>();
   let hasCover = $state(true);
-  let failed = $state(false);
   let tryAnyway = $state(false);
   let convertRequested = $state(false);
   let converting = $state(false);
   let progress = $state(0);
-  let converted = $state<string | null>(null);
   let convertError = $state("");
 
+  const isCurrent = $derived(playback.id === item.id);
+  const failed = $derived(playback.failed === item.id);
+  const copy = $derived(converted[item.id]);
   const hevc = $derived(item.codec === "HEVC");
   const unsupported = $derived(item.kind === "video" && !codecPlayable(item.codec));
-  const showBox = $derived(!converted && item.kind === "video" && ((unsupported && !tryAnyway) || failed));
+  const showBox = $derived(!copy && item.kind === "video" && ((unsupported && !tryAnyway) || failed));
   /** HEVC can also be fixed with the Windows extension, so it is only converted on request. */
   const wantConvert = $derived(showBox && (convertRequested || (unsupported && !hevc)));
 
@@ -44,8 +45,8 @@
     converting = true;
     progress = 0;
     try {
-      converted = await transcode(item.path, (r) => (progress = r));
-      failed = false;
+      converted[item.id] = await transcode(item.path, (r) => (progress = r));
+      playItem(item);
     } catch (e) {
       convertError = String(e);
     } finally {
@@ -59,16 +60,9 @@
     if (ffmpeg.available === false) installFfmpeg();
   }
 
-  export function toggle() {
-    if (!media) return;
-    if (media.paused) media.play().catch(() => {});
-    else media.pause();
-  }
-
-  function onMeta() {
-    if (!media) return;
-    const video = media instanceof HTMLVideoElement ? media : null;
-    setMeta(item.id, { width: video?.videoWidth, height: video?.videoHeight, duration: media.duration });
+  function playAnyway() {
+    tryAnyway = true;
+    playItem(item);
   }
 
   function store(url: string) {
@@ -123,43 +117,28 @@
         {/if}
 
         {#if hevc && !failed}
-          <button class="link" onclick={() => (tryAnyway = true)}>{t("Trotzdem abspielen")}</button>
+          <button class="link" onclick={playAnyway}>{t("Trotzdem abspielen")}</button>
         {/if}
       {/if}
     </div>
   {:else if item.kind === "video"}
-    <!-- svelte-ignore a11y_media_has_caption -->
-    <video
-      bind:this={media}
-      bind:muted={settings.muted}
-      bind:volume={settings.volume}
-      src={converted ? pathUrl(converted) : fileUrl(item)}
-      controls
-      autoplay
-      onloadedmetadata={onMeta}
-      onerror={() => (failed = true)}
-    ></video>
+    <!-- The playing video itself is shown by the image viewer. -->
+    <button class="video-poster" title={t("Abspielen")} onclick={() => playItem(item)}>
+      <Thumb {item} size={512} iconSize={64} />
+      <span class="big-play"><Icon name="play" size={34} /></span>
+    </button>
   {:else}
     <div class="audio-card">
-      {#if hasCover}
-        <img class="cover" src={coverUrl(item)} alt="" draggable="false" onerror={() => (hasCover = false)} />
-      {:else}
-        <div class="cover cover-empty"><Icon name="music" size={96} /></div>
-      {/if}
+      <button class="cover-btn" title={isCurrent && !playback.paused ? t("Pause") : t("Abspielen")} onclick={() => togglePlay(item)}>
+        {#if hasCover}
+          <img class="cover" src={coverUrl(item)} alt="" draggable="false" onerror={() => (hasCover = false)} />
+        {:else}
+          <span class="cover cover-empty"><Icon name="music" size={96} /></span>
+        {/if}
+        {#if !isCurrent || playback.paused}<span class="big-play"><Icon name="play" size={34} /></span>{/if}
+      </button>
       <div class="audio-title" title={item.path}>{item.name}</div>
-      <audio
-        bind:this={media}
-        bind:muted={settings.muted}
-        bind:volume={settings.volume}
-        src={fileUrl(item)}
-        controls
-        autoplay
-        onloadedmetadata={onMeta}
-        onerror={() => (failed = true)}
-      ></audio>
+      {#if failed}<div class="error-text">{t("Datei kann nicht abgespielt werden.")}</div>{/if}
     </div>
-  {/if}
-  {#if failed && (item.kind === "audio" || converted)}
-    <div class="viewer-msg error">{t("Datei kann nicht abgespielt werden.")}</div>
   {/if}
 </div>

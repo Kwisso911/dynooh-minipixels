@@ -65,6 +65,16 @@
     video: ["M4 5h11a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2z", "M17 10l5-3v10l-5-3"],
     prev: ["M15 18l-6-6 6-6"],
     next: ["M9 18l6-6-6-6"],
+    play: ["M7 4.5v15a1 1 0 0 0 1.5.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 7 4.5z"],
+    pause: ["M7 4h3v16H7z", "M14 4h3v16h-3z"],
+    skipBack: ["M19 20L9 12l10-8v16z", "M5 19V5"],
+    skipForward: ["M5 4l10 8-10 8V4z", "M19 5v14"],
+    volume: ["M11 5L6 9H2v6h4l5 4V5z", "M15.54 8.46a5 5 0 0 1 0 7.07", "M19.07 4.93a10 10 0 0 1 0 14.14"],
+    volumeOff: ["M11 5L6 9H2v6h4l5 4V5z", "M22 9l-6 6", "M16 9l6 6"],
+    sort: ["M21 16l-4 4-4-4", "M17 20V4", "M3 8l4-4 4 4", "M7 4v16"],
+    sortAsc: ["M3 8l4-4 4 4", "M7 4v16", "M11 12h4", "M11 16h7", "M11 20h10"],
+    sortDesc: ["M3 16l4 4 4-4", "M7 20V4", "M11 4h10", "M11 8h7", "M11 12h4"],
+    slideshow: ["M4 4h16a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z", "M10 8l5 2.5-5 2.5z", "M8 21h8", "M12 17v4"],
   } as const;
 
   export type IconName = keyof typeof PATHS;

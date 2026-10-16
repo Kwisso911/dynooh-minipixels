@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import type { SortKey } from "./files.svelte";
 
 export type OpenMode = "window" | "tabs" | "tiles" | "list";
 export type ThemeName = "light" | "dark" | "system";
@@ -20,12 +21,21 @@ export interface Settings {
   guides: boolean;
   /** Read by the backend at start. */
   splash: boolean;
+  /** Images advance by themselves; audio and video advance when they end. */
+  slideshow: boolean;
+  slideSeconds: number;
+  /** Audio and video advance to the next file when they end. */
+  autoNext: boolean;
+  /** Empty: the user's own order (opening order or dragged). */
+  sortKey: SortKey | "";
+  sortAsc: boolean;
 }
 
 const CHOICES: Partial<Record<keyof Settings, readonly string[]>> = {
   lang: ["de", "en"],
   theme: ["light", "dark", "system"],
   openMode: ["window", "tabs", "tiles", "list"],
+  sortKey: ["", "name", "format", "pixels", "duration", "size", "modified", "folder"],
 };
 
 const PALETTES = {
@@ -79,7 +89,18 @@ export const settings = $state<Settings>({
   rulers: false,
   guides: true,
   splash: true,
+  slideshow: false,
+  slideSeconds: 5,
+  autoNext: false,
+  sortKey: "",
+  sortAsc: true,
 });
+
+/** Seconds per image in the slideshow, guarded against an empty or odd input. */
+export function slideDelayMs(): number {
+  const s = Number(settings.slideSeconds);
+  return (Number.isFinite(s) && s >= 1 ? Math.min(s, 3600) : 5) * 1000;
+}
 
 let loaded = false;
 let saveTimer: ReturnType<typeof setTimeout> | undefined;

@@ -3,6 +3,7 @@
   import Thumb from "./Thumb.svelte";
   import { t } from "$lib/i18n";
   import { view, closeAt } from "$lib/files.svelte";
+  import { reorder } from "$lib/reorder";
 
   let { onmenu }: { onmenu: (e: MouseEvent, index: number) => void } = $props();
 
@@ -18,11 +19,12 @@
   }
 </script>
 
-<nav class="tabbar" bind:this={bar} onwheel={onWheel}>
+<nav class="tabbar" bind:this={bar} onwheel={onWheel} use:reorder={"x"}>
   {#each view.items as item, i (item.id)}
     <!-- svelte-ignore a11y_no_static_element_interactions -->
     <div
       class="tab"
+      data-index={i}
       class:active={i === view.active}
       title={item.path}
       onmousedown={(e) => e.button === 1 && e.preventDefault()}

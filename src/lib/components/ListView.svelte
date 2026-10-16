@@ -1,6 +1,9 @@
 <script lang="ts">
   import Thumb from "./Thumb.svelte";
+  import PlayBadge from "./PlayBadge.svelte";
   import { t } from "$lib/i18n";
+  import { settings } from "$lib/settings.svelte";
+  import { reorder } from "$lib/reorder";
   import { view, thumbBucket, sortItems, formatSize, formatDate, formatDuration, formatLabel, dirOf, type SortKey } from "$lib/files.svelte";
 
   let { onmenu }: { onmenu: (e: MouseEvent, index: number) => void } = $props();
@@ -31,16 +34,17 @@
       <tr>
         <th class="c-thumb"></th>
         {#each COLUMNS as col (col.key)}
-          <th class:num={col.num} class:sorted={view.sort.key === col.key} onclick={() => sortItems(col.key)}>
+          <th class:num={col.num} class:sorted={settings.sortKey === col.key} onclick={() => sortItems(col.key)}>
             {t(col.label)}
-            {#if view.sort.key === col.key}<span class="sort-arrow">{view.sort.asc ? "▲" : "▼"}</span>{/if}
+            {#if settings.sortKey === col.key}<span class="sort-arrow">{settings.sortAsc ? "▲" : "▼"}</span>{/if}
           </th>
         {/each}
       </tr>
     </thead>
-    <tbody>
+    <tbody use:reorder={"y"}>
       {#each view.items as item, i (item.id)}
         <tr
+          data-index={i}
           class:active={i === view.active}
           onclick={() => (view.active = i)}
           ondblclick={() => {
@@ -49,7 +53,10 @@
           }}
           oncontextmenu={(e) => onmenu(e, i)}
         >
-          <td class="c-thumb"><Thumb {item} size={bucket} iconSize={20} /></td>
+          <td class="c-thumb">
+            <Thumb {item} size={bucket} iconSize={20} />
+            {#if item.kind !== "image"}<PlayBadge {item} size={12} />{/if}
+          </td>
           <td class="c-name" title={item.path}>{item.name}</td>
           <td>{formatLabel(item)}</td>
           <td class="num">{item.width ? `${item.width} × ${item.height}` : ""}</td>
