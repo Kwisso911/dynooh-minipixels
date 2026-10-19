@@ -48,12 +48,16 @@ export const view = $state({
   active: -1,
   /** Tiles/list: the active image is shown full size. */
   viewing: false,
-  /** New-instance mode: images in the folder of the shown file, for previous/next. */
-  folder: [] as string[],
   dragging: false,
   fullscreen: false,
   message: "",
 });
+
+/** Supported files per folder (key: lower-case folder path), for browsing with the arrow keys. */
+const folders = $state<Record<string, string[]>>({});
+const folderReadAt = new Map<string, number>();
+/** A folder list younger than this is reused instead of reading the folder again. */
+const FOLDER_MAX_AGE = 3000;
 
 let nextId = 1;
 let messageTimer: ReturnType<typeof setTimeout> | undefined;
@@ -62,6 +66,20 @@ const keyOf = (p: string) => p.toLowerCase();
 
 export function dirOf(path: string): string {
   return path.slice(0, Math.max(path.lastIndexOf("\\"), path.lastIndexOf("/")));
+}
+
+function folderOf(path: string): string[] {
+  return folders[keyOf(dirOf(path))] ?? [];
+}
+
+/** Reads the supported files in the folder of `path`, unless that happened just before. */
+export async function loadFolder(path: string): Promise<string[]> {
+  const key = keyOf(dirOf(path));
+  const at = folderReadAt.get(key);
+  if (at && Date.now() - at < FOLDER_MAX_AGE && folders[key]) return folders[key];
+  folderReadAt.set(key, Date.now());
+  folders[key] = await invoke<string[]>("folder_images", { path }).catch(() => []);
+  return folders[key];
 }
 
 function makeItem(path: string): Item {
@@ -147,7 +165,7 @@ async function showSingle(path: string) {
   view.items = [makeItem(path)];
   view.active = 0;
   void loadInfo([path]);
-  view.folder = await invoke<string[]>("folder_images", { path }).catch(() => []);
+  await loadFolder(path);
 }
 
 /** Opens files and folders according to the chosen open mode. */
@@ -222,23 +240,40 @@ export async function openFolderDialog() {
 
 /** New-instance mode with a single file steps through its folder instead of the open files. */
 function folderMode(): boolean {
-  return settings.openMode === "window" && view.items.length <= 1 && view.folder.length > 1;
+  const cur = view.items[view.active];
+  return settings.openMode === "window" && view.items.length <= 1 && !!cur && folderOf(cur.path).length > 1;
 }
 
+/** Shows the file `delta` places further in the folder of the active file, in place of the active file. */
+function stepInFolder(cur: Item, list: string[], delta: number) {
+  const i = list.findIndex((p) => keyOf(p) === keyOf(cur.path));
+  const next = list[(i + delta + list.length) % list.length];
+  const open = view.items.findIndex((it) => keyOf(it.path) === keyOf(next));
+  if (open >= 0) {
+    view.active = open;
+    return;
+  }
+  view.items[view.active] = makeItem(next);
+  void loadInfo([next]);
+}
+
+/** Next/previous of the open files (Ctrl+Tab, slideshow, auto-next). */
 export function step(delta: number) {
   const cur = view.items[view.active];
   if (!cur) return;
-  if (folderMode()) {
-    const list = view.folder;
-    const i = list.findIndex((p) => keyOf(p) === keyOf(cur.path));
-    const next = list[(i + delta + list.length) % list.length];
-    view.items = [makeItem(next)];
-    view.active = 0;
-    void loadInfo([next]);
-    return;
-  }
+  if (folderMode()) return stepInFolder(cur, folderOf(cur.path), delta);
   const n = view.items.length;
   if (n > 1) view.active = (view.active + delta + n) % n;
+}
+
+/** Arrow keys: next/previous file in the folder of the shown file; falls back to the open files. */
+export async function browse(delta: number) {
+  const cur = view.items[view.active];
+  if (!cur) return;
+  const list = await loadFolder(cur.path);
+  if (view.items[view.active]?.id !== cur.id) return;
+  if (list.length > 1) stepInFolder(cur, list, delta);
+  else step(delta);
 }
 
 export function select(index: number) {
@@ -251,16 +286,24 @@ export function closeAt(index: number) {
   if (!view.items.length) {
     view.active = -1;
     view.viewing = false;
-    view.folder = [];
   }
 }
 
-/** 1-based position and total for the status bar, or null if there is nothing to step through. */
+/** 1-based position and total of the active file among the open files, or null if there is nothing to step through. */
 export function position(): [number, number] | null {
   const cur = view.items[view.active];
   if (!cur) return null;
-  if (folderMode()) return [view.folder.findIndex((p) => keyOf(p) === keyOf(cur.path)) + 1, view.folder.length];
+  if (folderMode()) return folderPosition();
   return view.items.length > 1 ? [view.active + 1, view.items.length] : null;
+}
+
+/** 1-based position and total of the active file in its folder, or null if the folder has no other file. */
+export function folderPosition(): [number, number] | null {
+  const cur = view.items[view.active];
+  if (!cur) return null;
+  const list = folderOf(cur.path);
+  const i = list.findIndex((p) => keyOf(p) === keyOf(cur.path));
+  return list.length > 1 && i >= 0 ? [i + 1, list.length] : null;
 }
 
 function comparator(key: SortKey): (a: Item, b: Item) => number {

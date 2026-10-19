@@ -14,6 +14,7 @@ A small, fast image and media viewer for Windows. Open images, audio and video i
 - **Video like images** – zoom, rulers, guides and pixel grid also for a playing video
 - **Slideshow** – F5 starts and stops it, seconds per image in the settings
 - **Open your way** – new window, tabs, tiles or list, browse a whole folder
+- **Folder browsing** – ← / → load the previous or next file of the shown file's folder in place, Ctrl+Tab switches between the open files
 - **Sorting** – by name or age, or your own order by dragging tabs, tiles and rows
 - **Rulers and guides** – Ctrl+R shows rulers, drag guides out of them, Ctrl+H hides them, Del removes the selected guide
 - **Pixel grid** – fine grid around every pixel above 400 % zoom

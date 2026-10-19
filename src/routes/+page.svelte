@@ -22,9 +22,12 @@
   import {
     view,
     step,
+    browse,
     select,
     closeAt,
     position,
+    folderPosition,
+    loadFolder,
     openPaths,
     openFilesDialog,
     openFolderDialog,
@@ -60,6 +63,8 @@
   const showVideo = $derived(showViewer && item?.kind === "video" && playback.id === item.id && playback.failed !== item.id);
   const zoomable = $derived(showImage || showVideo);
   const pos = $derived(position());
+  /** In the single view the arrows browse the folder of the shown file, so the counter follows it. */
+  const viewPos = $derived(showViewer ? (folderPosition() ?? pos) : pos);
   const dark = $derived(isDark());
   const showBar = $derived(view.items.some(isMedia));
   const showSort = $derived(view.items.length > 1 && (settings.openMode === "tabs" || (overview && !view.viewing)));
@@ -84,6 +89,11 @@
     void item.id;
     const timer = setTimeout(() => step(1), slideDelayMs());
     return () => clearTimeout(timer);
+  });
+
+  $effect(() => {
+    const path = showViewer ? item?.path : undefined;
+    if (path) untrack(() => void loadFolder(path));
   });
 
   /** Opening an audio/video file in the single view plays it; a mode switch keeps what is playing. */
@@ -243,15 +253,15 @@
       switch (key) {
         case "ArrowLeft":
         case "PageUp":
-          step(-1);
+          void browse(-1);
           break;
         case "ArrowRight":
         case "PageDown":
-          step(1);
+          void browse(1);
           break;
         case " ":
           if (isMedia(item)) togglePlay(item);
-          else step(1);
+          else void browse(1);
           break;
         case "+":
         case "=":
@@ -385,9 +395,9 @@
       {#if view.viewing}
         <button class="icon-btn" title="{t('Zurück zur Übersicht')} (Esc)" onclick={() => (view.viewing = false)}><Icon name="back" /></button>
       {/if}
-      {#if pos}
-        <button class="icon-btn" title="{t('Vorherige Datei')} (←)" onclick={() => step(-1)}><Icon name="prev" /></button>
-        <button class="icon-btn" title="{t('Nächste Datei')} (→)" onclick={() => step(1)}><Icon name="next" /></button>
+      {#if viewPos}
+        <button class="icon-btn" title="{t('Vorherige Datei')} (←)" onclick={() => browse(-1)}><Icon name="prev" /></button>
+        <button class="icon-btn" title="{t('Nächste Datei')} (→)" onclick={() => browse(1)}><Icon name="next" /></button>
         <span class="divider"></span>
       {/if}
       {#if zoomable}
@@ -472,7 +482,7 @@
     {/if}
     <span class="spacer"></span>
     {#if view.message}<span class="status-msg">{view.message}</span>{/if}
-    {#if pos}<span>{pos[0]} / {pos[1]}</span>{/if}
+    {#if viewPos}<span>{viewPos[0]} / {viewPos[1]}</span>{/if}
   </footer>
 </div>
 
