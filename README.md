@@ -4,7 +4,11 @@
 
 A small, fast image and media viewer for Windows. Open images, audio and video in tabs, tiles, a list or separate windows – with rulers, guides and a pixel grid for precise checks.
 
-**Download:** [apps.dynooh.com](https://apps.dynooh.com/) (portable `.exe`, no installation)
+**Download:** [apps.dynooh.com/minipixels](https://apps.dynooh.com/minipixels/) or [GitHub Releases](https://github.com/Kwisso911/dynooh-minipixels/releases/latest) (portable `.exe`, signed, no installation)
+
+![Tiles view](docs/screenshot-tiles.png)
+
+![745 % zoom with rulers, guides and pixel grid](docs/screenshot-zoom.png)
 
 ## Features
 
