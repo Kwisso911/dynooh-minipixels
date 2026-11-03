@@ -6,6 +6,8 @@ A small, fast image and media viewer for Windows. Open images, audio and video i
 
 **Download:** [apps.dynooh.com/minipixels](https://apps.dynooh.com/minipixels/) or [GitHub Releases](https://github.com/Kwisso911/dynooh-minipixels/releases/latest) (portable `.exe`, signed, no installation)
 
+**Scoop:** `scoop bucket add dynooh https://github.com/Kwisso911/scoop-dynooh` and then `scoop install dynooh/dynooh-minipixels`
+
 ![Tiles view](docs/screenshot-tiles.png)
 
 ![745 % zoom with rulers, guides and pixel grid](docs/screenshot-zoom.png)
